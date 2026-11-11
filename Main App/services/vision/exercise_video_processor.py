@@ -36,7 +36,11 @@ class VideoProcessorClass(VideoProcessorBase):
             output_segmentation_masks=False
         )
 
-        self._landmarker = vision.PoseLandmarker.create_from_options(options)
+        try:
+            self._landmarker = vision.PoseLandmarker.create_from_options(options)
+        except Exception as e:
+            print(f'PoseLandmarker load error: {e}')
+            self._landmarker = None
 
         self._detectors = {
             "Squats": SquatDetector(),
@@ -201,6 +205,10 @@ class VideoProcessorClass(VideoProcessorBase):
             image_format=mp.ImageFormat.SRGB,
             data=cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         )
+
+        if self._landmarker is None:
+            cv2.putText(image, 'AI Model Not Loaded', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            return av.VideoFrame.from_ndarray(image, format='bgr24')
 
         self._frame_timestamps_ms += 30
         result = self._landmarker.detect_for_video(mp_image, self._frame_timestamps_ms)
