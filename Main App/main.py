@@ -31,6 +31,11 @@ from services.coaching.tts import TextToSpeech
 from services.coaching.voice_pipeline import VoicePipeline, autoplay_audio
 
   
+@st.fragment(run_every="2s")
+def live_sync_widget(context):
+    if context and hasattr(context, "state") and context.state.playing:
+        sync_metrics_update(context)
+
 def main():
     st.set_page_config(
         page_icon="🏋️‍♀️",
@@ -283,10 +288,7 @@ def main():
         )
 
         sync_metrics_update(context)
-
-        if context.state.playing:
-            time.sleep(0.25)
-            st.rerun()
+        live_sync_widget(context)
 
         inject_webrtc_styles()
 
