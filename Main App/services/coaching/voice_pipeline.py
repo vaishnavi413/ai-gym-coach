@@ -77,12 +77,14 @@ class VoicePipeline:
             if now - self.last_spoken_at < 5:
                 return None
             
-        text = self.llm.give_feedback(event, issue)
-        voice = self.tts.speak(text)
-
-        self.last_spoken_at = now
-
-        return voice, text
+        try:
+            text = self.llm.give_feedback(event, issue)
+            voice = self.tts.speak(text)
+            self.last_spoken_at = now
+            return voice, text
+        except Exception as e:
+            # Gracefully fail without crashing if Groq API is unavailable or unconfigured
+            return None
     
 
 def autoplay_audio(audio_bytes):
