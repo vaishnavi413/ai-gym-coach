@@ -31,10 +31,25 @@ from services.coaching.tts import TextToSpeech
 from services.coaching.voice_pipeline import VoicePipeline, autoplay_audio
 
   
-@st.fragment(run_every="2s")
+@st.fragment(run_every="1s")
 def live_sync_widget(context):
     if context and hasattr(context, "state") and context.state.playing:
         sync_metrics_update(context)
+        st.success("🟢 Camera Active • Tracking & Auto-Saving Reps in Real Time")
+    elif context and hasattr(context, "state") and not context.state.playing:
+        st.info("💡 Click the **START** button above to activate the camera and start tracking.")
+
+    total_reps = st.session_state.get("reps", 0)
+    reps_per_set = st.session_state.get("reps_per_set", 10)
+    current_set_reps = st.session_state.get("current_set_reps", 0)
+    sets_done = st.session_state.get("sets_completed", 0)
+    target_sets = st.session_state.get("target_sets", 3)
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🏋️ Total Reps", f"{total_reps}")
+    col2.metric("🎯 Current Set", f"{current_set_reps} / {reps_per_set}")
+    col3.metric("🏆 Sets Done", f"{sets_done} / {target_sets}")
+
 
 def main():
     st.set_page_config(
@@ -84,7 +99,7 @@ def main():
         st.title("🏋️‍♂️ Apna AI Coach")
 
         if st.session_state.username:
-            st.caption(f"👤 Login as {st.session_state.username}")
+            st.caption(f"👤 Logged in as **{st.session_state.username}**")
         if st.button("Log Out / Switch User", key="logout_btn"):
             st.session_state["user_id"] = None
             st.session_state["username"] = None
@@ -98,9 +113,9 @@ def main():
         if not workout_started:
             plan_exercise = st.selectbox("Exercise", options=EXERCISE_OPTIONS, key="plan_exercise")
 
-            plan_sets = st.number_input("Sets", min_value=0, max_value=50, key="plan_sets", step=1)
+            plan_sets = st.number_input("Sets", min_value=1, max_value=50, value=3, key="plan_sets", step=1)
 
-            plan_reps = st.number_input("Reps per Set", min_value=0, max_value=50, key="plan_reps", step=1)
+            plan_reps = st.number_input("Reps per Set", min_value=1, max_value=50, value=10, key="plan_reps", step=1)
 
             st.markdown("")
 
@@ -111,9 +126,12 @@ def main():
                 st.session_state.target_sets = int(plan_sets)
                 st.session_state.reps_per_set = int(plan_reps)
                 st.session_state.reps = 0
+                st.session_state.sets_completed = 0
+                st.session_state.current_set_reps = 0
+                st.session_state.last_saved_reps = 0
+                st.session_state.last_saved_sets_completed = 0
                 st.session_state.workout_started = True
                 st.session_state.set_cycle_started_at = time.time()
-                st.session_state.last_saved_sets_completed = 0
 
                 if st.session_state.voice_pipeline:
                     try:
@@ -135,28 +153,28 @@ def main():
             sets = st.session_state.get("target_sets")
             reps = st.session_state.get("reps_per_set")
 
-            st.info(f"**{exercise}** -- {sets} Sets / {reps} Reps")
+            st.info(f"**{exercise}** — {sets} Sets / {reps} Reps Target")
 
-            end_session_button = st.button("End Workout", key="end_session_button", width="stretch")
+            end_session_button = st.button("💾 End & Save Workout", key="end_session_button", width="stretch")
 
             if end_session_button:
                 st.session_state.workout_started = False
-                # Save workout progress to database
+                # Save any remaining unsaved progress to SQLite
                 user_id = st.session_state.get("user_id", 0)
-                reps = st.session_state.get("reps", 0)
-                sets_completed = st.session_state.get("sets_completed", 0)
+                reps_done = st.session_state.get("reps", 0)
+                sets_done = st.session_state.get("sets_completed", 0)
+                last_saved_reps = st.session_state.get("last_saved_reps", 0)
                 last_saved_sets = st.session_state.get("last_saved_sets_completed", 0)
-                reps_per_set = st.session_state.get("reps_per_set", 0)
-                if reps > 0:
+                
+                if reps_done > last_saved_reps and user_id and exercise:
                     now_ts = time.time()
                     started_at = st.session_state.get("set_cycle_started_at", now_ts)
                     time_taken = max(1, int(now_ts - started_at))
-                    already_saved_reps = last_saved_sets * reps_per_set if reps_per_set > 0 else 0
-                    unsaved_reps = max(0, reps - already_saved_reps)
-                    unsaved_sets = max(0, sets_completed - last_saved_sets)
-                    if unsaved_reps > 0 or unsaved_sets > 0:
-                        add_exercise(user_id, exercise, unsaved_reps, max(1 if sets_completed == 0 else 0, unsaved_sets), time_taken)
-                        st.session_state["last_saved_sets_completed"] = sets_completed
+                    unsaved_reps = reps_done - last_saved_reps
+                    unsaved_sets = max(0, sets_done - last_saved_sets)
+                    add_exercise(user_id, exercise, unsaved_reps, unsaved_sets, time_taken)
+                    st.session_state["last_saved_reps"] = reps_done
+                    st.session_state["last_saved_sets_completed"] = sets_done
                 
                 if st.session_state.voice_pipeline:
                     try:
@@ -170,55 +188,39 @@ def main():
                     except Exception:
                         pass
 
+                st.success("Workout saved to history!")
                 st.rerun()
 
         if workout_started:
             st.divider()
 
             exercise = st.session_state.get("exercise_type")
-            total_reps = st.session_state.get("reps")
-            current_set_reps = st.session_state.get("current_set_reps")
-            reps_per_set = st.session_state.get("reps_per_set")
-            sets_completed = st.session_state.get("sets_completed")
-            target_sets = st.session_state.get("target_sets")
-
-            st.subheader("Progress")
-
-            st.metric("Total Reps", f"{total_reps}")
-            st.metric("Current Set Reps", f"{current_set_reps} / {reps_per_set}")
-            st.metric("Sets Completed", f"{sets_completed} / {target_sets}")
-
-            st.divider()
+            st.subheader("Live Exercise Metrics")
 
             if exercise == "Squats":
-                st.subheader("Squat Metrics")
-                st.metric("Knee Angle", f"{st.session_state.knee_angle}°")
-                st.metric("Back Angle", f"{st.session_state.back_angle}°")
-                st.metric("Depth Status", st.session_state.depth_status)
+                st.metric("Knee Angle", f"{st.session_state.get('knee_angle', 0)}°")
+                st.metric("Back Angle", f"{st.session_state.get('back_angle', 0)}°")
+                st.metric("Depth Status", st.session_state.get("depth_status", "N/A"))
 
             elif exercise == "Push-ups":
-                st.subheader("Push-up Metrics")
-                st.metric("Elbow Angle", f"{st.session_state.elbow_angle}°")
-                st.metric("Body Alignment", st.session_state.body_alignment)
-                st.metric("Hip Position", st.session_state.hip_status)
+                st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
+                st.metric("Body Alignment", st.session_state.get("body_alignment", "N/A"))
+                st.metric("Hip Position", st.session_state.get("hip_status", "N/A"))
 
             elif exercise == "Biceps Curls (Dumbbell)":
-                st.subheader("Curl Metrics")
-                st.metric("Elbow Angle", f"{st.session_state.elbow_angle}°")
-                st.metric("Shoulder Stability", st.session_state.shoulder_status)
-                st.metric("Swing Detection", st.session_state.swing_status)
+                st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
+                st.metric("Shoulder Stability", st.session_state.get("shoulder_status", "N/A"))
+                st.metric("Swing Detection", st.session_state.get("swing_status", "N/A"))
 
             elif exercise == "Shoulder Press":
-                st.subheader("Shoulder Press Metrics")
-                st.metric("Elbow Angle", f"{st.session_state.elbow_angle}°")
-                st.metric("Arm Extension", st.session_state.extension_status)
-                st.metric("Back Arch", st.session_state.back_arch_status)
+                st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
+                st.metric("Arm Extension", st.session_state.get("extension_status", "N/A"))
+                st.metric("Back Arch", st.session_state.get("back_arch_status", "N/A"))
 
             elif exercise == "Lunges":
-                st.subheader("Lunge Metrics")
-                st.metric("Front Knee Angle", f"{st.session_state.front_knee_angle}°")
-                st.metric("Torso Angle", f"{st.session_state.torso_angle}°")
-                st.metric("Balance Status", st.session_state.balance_status)
+                st.metric("Front Knee Angle", f"{st.session_state.get('front_knee_angle', 0)}°")
+                st.metric("Torso Angle", f"{st.session_state.get('torso_angle', 0)}°")
+                st.metric("Balance Status", st.session_state.get("balance_status", "N/A"))
 
     st.title("AI Real-time GYM Coach")
     st.markdown("#### Real-time pose detection with proactive AI voice coaching")
@@ -234,18 +236,18 @@ def main():
         st.markdown(
             """
             <div style="
-                border: 10px dashed #444;
-                border-radius: 0px;
-                padding: 48px 32px;
+                border: 2px dashed #444;
+                border-radius: 8px;
+                padding: 40px 24px;
                 text-align: center;
-                color: #888;
-                margin-top: 32px;
-                margin-bottom: 32px;
+                color: #aaa;
+                margin-top: 24px;
+                margin-bottom: 24px;
+                background-color: rgba(255, 255, 255, 0.02);
             ">
-                <h2 style="color:#ccc; margin-bottom:8px;">👈 Set your workout plan</h2>
-                <p style="font-size:1.05rem;">
-                    Choose your exercise, sets and reps in the sidebar,<br>
-                    then click <strong>Start Workout</strong> to activate the camera and AI coach.
+                <h3 style="color:#eee; margin-bottom:8px;">👈 Set your workout plan in the sidebar</h3>
+                <p style="font-size:1.05rem; color:#888;">
+                    Choose your exercise, sets and reps, then click <strong>Start Workout</strong> to activate your camera and AI trainer.
                 </p>
             </div>
             """,
@@ -294,11 +296,17 @@ def main():
 
     st.divider()
 
-    st.markdown("#### Workout History")
+    # Workout History Section
+    st.markdown("### 📜 Workout History")
 
     user_id = st.session_state.get("user_id", 0)
 
-    if isinstance(user_id, int):
+    col_btn, _ = st.columns([1, 4])
+    with col_btn:
+        if st.button("🔄 Refresh History", key="refresh_hist_btn"):
+            st.rerun()
+
+    if isinstance(user_id, int) and user_id > 0:
         history_rows = get_users_exercises(user_id)
 
         arr = [
@@ -324,9 +332,10 @@ def main():
             agg_df.index += 1
             st.table(agg_df, border="horizontal")
         else:
-            st.info("No workout history found.")
+            st.info("No workout history found yet. Start an exercise above and your reps will automatically save here!")
+    else:
+        st.info("Please log in to view and save your workout history.")
 
 
 if __name__ == "__main__":
     main()
-    

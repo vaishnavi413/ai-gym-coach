@@ -69,12 +69,14 @@ def get_or_create_user(username: str) -> sqlite3.Row:
 
 
 def add_exercise(user_id, exercise_name, reps, sets, time):
+    if not user_id or reps <= 0:
+        return
     conn = _get_connection()
 
     with conn:
         existing = conn.execute("""
             SELECT * FROM exercises 
-            WHERE user_id = ? AND exercise_name = ? AND Date('created_at') = Date('now')
+            WHERE user_id = ? AND exercise_name = ? AND date(created_at) = date('now')
         """, (user_id, exercise_name)).fetchone()
 
         if existing:
@@ -82,18 +84,22 @@ def add_exercise(user_id, exercise_name, reps, sets, time):
                 UPDATE exercises 
                 SET reps = reps + ?, sets = sets + ?, time = time + ?
                 WHERE id = ?
-            """, (reps, sets, time, existing['id']))
+            """, (reps, sets, int(time), existing['id']))
         else:
             conn.execute("""
                 INSERT INTO exercises (user_id, exercise_name, sets, reps, time)
                 VALUES (?, ?, ?, ?, ?)
-            """, (user_id, exercise_name, sets, reps, time))
+            """, (user_id, exercise_name, sets, reps, int(time)))
+        conn.commit()
 
 
 def get_users_exercises(user_id):
+    if not user_id:
+        return []
     conn = _get_connection()
 
     return conn.execute("""
         SELECT * FROM exercises 
         WHERE user_id = ?
+        ORDER BY id DESC
     """, (user_id,)).fetchall()

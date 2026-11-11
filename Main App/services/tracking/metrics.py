@@ -33,14 +33,12 @@ def sync_metrics_update(context):
 
     fields = METRICS_FIELDS.get(exercise)
 
-    if not fields:
-        return 
+    if fields:
+        for key, default in fields.items():
+            st.session_state[key] = latest_metrics.get(key, default)
 
-    for key, default in fields.items():
-        st.session_state[key] = latest_metrics.get(key, default)
-
-    reps_per_set = st.session_state.get("reps_per_set", 0)
-    target_sets = st.session_state.get("target_sets", 0)
+    reps_per_set = st.session_state.get("reps_per_set", 10)
+    target_sets = st.session_state.get("target_sets", 3)
 
     if reps is not None and reps_per_set > 0 and target_sets > 0:
         sets_completed = reps // reps_per_set
@@ -48,24 +46,34 @@ def sync_metrics_update(context):
         workout_completed = sets_completed >= target_sets 
     else:
         sets_completed = 0
-        current_set_reps = 0
+        current_set_reps = reps
         workout_completed = False
 
     st.session_state.sets_completed = sets_completed
     st.session_state.current_set_reps = current_set_reps
     st.session_state.workout_completed = workout_completed
 
+    # Live auto-save progress to SQLite database whenever reps increase
+    last_saved_reps = st.session_state.get("last_saved_reps", 0)
     last_saved_sets = st.session_state.get("last_saved_sets_completed", 0)
+    user_id = st.session_state.get("user_id", 0)
 
-    if target_sets > 0 and reps_per_set > 0 and sets_completed > last_saved_sets:
-        newly_completed = sets_completed - last_saved_sets
+    if reps > last_saved_reps and user_id:
         now_ts = time.time()
         started_at = st.session_state.get("set_cycle_started_at", now_ts)
-        time_taken = now_ts - started_at
-        user_id = st.session_state.get("user_id", 0)
+        time_taken = max(1, int(now_ts - started_at))
 
-        add_exercise(user_id, exercise, newly_completed * reps_per_set, newly_completed, time_taken)
+        newly_completed_reps = reps - last_saved_reps
+        newly_completed_sets = max(0, sets_completed - last_saved_sets)
 
+        add_exercise(user_id, exercise, newly_completed_reps, newly_completed_sets, time_taken)
+        st.session_state.last_saved_reps = reps
+        st.session_state.last_saved_sets_completed = sets_completed
+        st.session_state.set_cycle_started_at = now_ts
+
+    # Notify set completed via voice coach
+    if target_sets > 0 and reps_per_set > 0 and sets_completed > st.session_state.get("last_notified_sets_completed", 0):
+        st.session_state.last_notified_sets_completed = sets_completed
         if st.session_state.get("voice_pipeline"):
             result = st.session_state.voice_pipeline.process_event(
                 event="set_completed",
@@ -76,9 +84,7 @@ def sync_metrics_update(context):
             if result:
                 st.session_state.audio_to_play, st.session_state.coach_feedback = result
 
-        st.session_state.set_cycle_started_at = now_ts
-        st.session_state.last_saved_sets_completed = sets_completed
-
+    # Notify workout completed via voice coach
     if workout_completed and not st.session_state.get("last_notified_workout_complete", False):
         st.session_state.last_notified_workout_complete = True
 
