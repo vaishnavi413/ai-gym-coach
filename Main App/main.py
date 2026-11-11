@@ -263,24 +263,29 @@ def main():
         ]
         try:
             if hasattr(st, "secrets"):
+                if "webrtc" in st.secrets:
+                    turn_cfg = st.secrets["webrtc"]
+                    urls = turn_cfg.get("turn_url", [])
+                    if isinstance(urls, str):
+                        urls = [urls]
+                    username = str(turn_cfg.get("turn_username", "")).strip()
+                    credential = str(turn_cfg.get("turn_password", "")).strip()
+                    if urls and username and credential:
+                        ice_servers.append({
+                            "urls": urls,
+                            "username": username,
+                            "credential": credential,
+                        })
                 if "metered_api_key" in st.secrets:
                     api_key = str(st.secrets["metered_api_key"]).strip()
                     domain = str(st.secrets.get("metered_domain", "")).strip()
                     url = f"https://{domain}.metered.live/api/v1/turn/credentials?apiKey={api_key}" if domain else f"https://metered.live/api/v1/turn/credentials?apiKey={api_key}"
                     import urllib.request, json
                     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                    with urllib.request.urlopen(req, timeout=4) as resp:
+                    with urllib.request.urlopen(req, timeout=3) as resp:
                         metered_servers = json.loads(resp.read().decode())
                         if isinstance(metered_servers, list) and len(metered_servers) > 0:
-                            ice_servers = metered_servers
-                elif "webrtc" in st.secrets:
-                    turn_cfg = st.secrets["webrtc"]
-                    if "turn_url" in turn_cfg:
-                        ice_servers.append({
-                            "urls": [turn_cfg["turn_url"]],
-                            "username": turn_cfg.get("turn_username", ""),
-                            "credential": turn_cfg.get("turn_password", ""),
-                        })
+                            ice_servers.extend(metered_servers)
         except Exception:
             pass
 
