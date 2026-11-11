@@ -20,3 +20,4 @@ _backup_previous_work/
 .env
 
 *.db
+*secrets.toml

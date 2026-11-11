@@ -259,8 +259,8 @@ def main():
             {"urls": ["stun:global.stun.twilio.com:3478"]},
             {"urls": ["stun:stun.cloudflare.com:3478"]},
         ]
-        if hasattr(st, "secrets") and "webrtc" in st.secrets:
-            try:
+        try:
+            if hasattr(st, "secrets") and "webrtc" in st.secrets:
                 turn_cfg = st.secrets["webrtc"]
                 if "turn_url" in turn_cfg:
                     ice_servers.append({
@@ -268,8 +268,8 @@ def main():
                         "username": turn_cfg.get("turn_username", ""),
                         "credential": turn_cfg.get("turn_password", ""),
                     })
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         context = webrtc_streamer(
             key="exercise-analysis",
