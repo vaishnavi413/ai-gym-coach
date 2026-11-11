@@ -247,11 +247,40 @@ def main():
             unsafe_allow_html=True,
         )
     else:
+        ice_servers = [
+            {
+                "urls": [
+                    "stun:stun.l.google.com:19302",
+                    "stun:stun1.l.google.com:19302",
+                    "stun:stun2.l.google.com:19302",
+                    "stun:openrelay.metered.ca:80",
+                ]
+            },
+            {
+                "urls": [
+                    "turn:openrelay.metered.ca:80",
+                    "turn:openrelay.metered.ca:443",
+                    "turns:openrelay.metered.ca:443",
+                ],
+                "username": "openrelayproject",
+                "credential": "openrelayproject",
+            },
+        ]
+        if hasattr(st, "secrets") and "webrtc" in st.secrets:
+            try:
+                ice_servers.append({
+                    "urls": [st.secrets["webrtc"]["turn_url"]],
+                    "username": st.secrets["webrtc"]["turn_username"],
+                    "credential": st.secrets["webrtc"]["turn_password"],
+                })
+            except Exception:
+                pass
+
         context = webrtc_streamer(
             key="exercise-analysis",
             mode=WebRtcMode.SENDRECV,
             video_processor_factory=VideoProcessorClass,
-            rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+            rtc_configuration={"iceServers": ice_servers},
             media_stream_constraints={
                 "video": True,
                 "audio": False
