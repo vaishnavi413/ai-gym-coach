@@ -21,3 +21,4 @@ _backup_previous_work/
 
 *.db
 *secrets.toml
+.vscode/

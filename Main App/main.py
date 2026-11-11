@@ -262,14 +262,25 @@ def main():
             {"urls": ["stun:stun.cloudflare.com:3478"]},
         ]
         try:
-            if hasattr(st, "secrets") and "webrtc" in st.secrets:
-                turn_cfg = st.secrets["webrtc"]
-                if "turn_url" in turn_cfg:
-                    ice_servers.append({
-                        "urls": [turn_cfg["turn_url"]],
-                        "username": turn_cfg.get("turn_username", ""),
-                        "credential": turn_cfg.get("turn_password", ""),
-                    })
+            if hasattr(st, "secrets"):
+                if "metered_api_key" in st.secrets:
+                    api_key = str(st.secrets["metered_api_key"]).strip()
+                    domain = str(st.secrets.get("metered_domain", "")).strip()
+                    url = f"https://{domain}.metered.live/api/v1/turn/credentials?apiKey={api_key}" if domain else f"https://metered.live/api/v1/turn/credentials?apiKey={api_key}"
+                    import urllib.request, json
+                    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=4) as resp:
+                        metered_servers = json.loads(resp.read().decode())
+                        if isinstance(metered_servers, list) and len(metered_servers) > 0:
+                            ice_servers = metered_servers
+                elif "webrtc" in st.secrets:
+                    turn_cfg = st.secrets["webrtc"]
+                    if "turn_url" in turn_cfg:
+                        ice_servers.append({
+                            "urls": [turn_cfg["turn_url"]],
+                            "username": turn_cfg.get("turn_username", ""),
+                            "credential": turn_cfg.get("turn_password", ""),
+                        })
         except Exception:
             pass
 
@@ -293,6 +304,14 @@ def main():
         live_sync_widget(context)
 
         inject_webrtc_styles()
+
+        with st.expander("ℹ️ Camera connection taking longer than expected on cloud?", expanded=False):
+            st.markdown(
+                """
+                * **Running Locally (`http://localhost:8501`):** Camera connects instantly (< 1s) with 0 network latency.
+                * **Running on Streamlit Cloud:** AWS cloud containers require TURN relay traversal across restrictive firewalls. Add free Metered TURN credentials in your Streamlit Cloud **App Settings ➔ Secrets**.
+                """
+            )
 
     st.divider()
 
