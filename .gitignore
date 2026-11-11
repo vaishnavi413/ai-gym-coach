@@ -15,3 +15,8 @@ Main App/data.db
 
 # Logs
 *.log
+.venv/
+_backup_previous_work/
+.env
+
+*.db

@@ -1,5 +1,6 @@
 import os
 import cv2
+from pathlib import Path
 import av
 import numpy as np
 import mediapipe as mp
@@ -22,6 +23,8 @@ class VideoProcessorClass(VideoProcessorBase):
         self._exercise_type = "Squats"
 
         model_path = os.path.join(os.getcwd(), "ml_models", "pose_landmarker_full.task")
+        if not os.path.exists(model_path):
+            model_path = str(Path(__file__).resolve().parent.parent.parent / "ml_models" / "pose_landmarker_full.task")
         base_option = python.BaseOptions(model_asset_path=model_path)
 
         options = vision.PoseLandmarkerOptions(

@@ -1,6 +1,20 @@
 import streamlit as st
 import os
+import sys
 import time
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure the app directory is in sys.path so imports work from any working directory
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+# Load environment variables from .env file (supports .env in Main App or project root)
+load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR.parent / ".env")
+load_dotenv()
+
 import pandas as pd
 from services.auth.login_wall import render_login_wall
 from services.state.session_defaults import initial_session_defaults
@@ -10,7 +24,7 @@ from services.persistence.exercise_repository import init_db
 from streamlit_webrtc import webrtc_streamer, WebRtcMode
 from services.vision.exercise_video_processor import VideoProcessorClass
 from services.tracking.metrics import sync_metrics_update
-from services.persistence.exercise_repository import get_users_exercises
+from services.persistence.exercise_repository import get_users_exercises, add_exercise
 from groq import Groq
 from services.coaching.llm import LLMCoach
 from services.coaching.tts import TextToSpeech
@@ -25,8 +39,15 @@ def main():
         layout="centered"
     )
 
-    load_css(os.path.join(os.getcwd(), "static", "style.css"))
-    inject_local_font(os.path.join(os.getcwd(), "static", "AdobeClean.otf"), "AdobeClean")
+    css_path = BASE_DIR / "static" / "style.css"
+    if not css_path.exists():
+        css_path = Path(os.getcwd()) / "static" / "style.css"
+    load_css(str(css_path))
+
+    font_path = BASE_DIR / "static" / "AdobeClean.otf"
+    if not font_path.exists():
+        font_path = Path(os.getcwd()) / "static" / "AdobeClean.otf"
+    inject_local_font(str(font_path), "AdobeClean")
 
     init_db()
 
@@ -56,6 +77,11 @@ def main():
 
         if st.session_state.username:
             st.caption(f"👤 Login as {st.session_state.username}")
+        if st.button("Log Out / Switch User", key="logout_btn"):
+            st.session_state["user_id"] = None
+            st.session_state["username"] = None
+            st.session_state["workout_started"] = False
+            st.rerun()
 
         st.divider()
 
@@ -105,6 +131,22 @@ def main():
 
             if end_session_button:
                 st.session_state.workout_started = False
+                # Save workout progress to database
+                user_id = st.session_state.get("user_id", 0)
+                reps = st.session_state.get("reps", 0)
+                sets_completed = st.session_state.get("sets_completed", 0)
+                last_saved_sets = st.session_state.get("last_saved_sets_completed", 0)
+                reps_per_set = st.session_state.get("reps_per_set", 0)
+                if reps > 0:
+                    now_ts = time.time()
+                    started_at = st.session_state.get("set_cycle_started_at", now_ts)
+                    time_taken = max(1, int(now_ts - started_at))
+                    already_saved_reps = last_saved_sets * reps_per_set if reps_per_set > 0 else 0
+                    unsaved_reps = max(0, reps - already_saved_reps)
+                    unsaved_sets = max(0, sets_completed - last_saved_sets)
+                    if unsaved_reps > 0 or unsaved_sets > 0:
+                        add_exercise(user_id, exercise, unsaved_reps, max(1 if sets_completed == 0 else 0, unsaved_sets), time_taken)
+                        st.session_state["last_saved_sets_completed"] = sets_completed
                 
                 if st.session_state.voice_pipeline:
                     result = st.session_state.voice_pipeline.process_event(
