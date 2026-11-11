@@ -248,31 +248,21 @@ def main():
         )
     else:
         ice_servers = [
-            {
-                "urls": [
-                    "stun:stun.l.google.com:19302",
-                    "stun:stun1.l.google.com:19302",
-                    "stun:stun2.l.google.com:19302",
-                    "stun:openrelay.metered.ca:80",
-                ]
-            },
-            {
-                "urls": [
-                    "turn:openrelay.metered.ca:80",
-                    "turn:openrelay.metered.ca:443",
-                    "turns:openrelay.metered.ca:443",
-                ],
-                "username": "openrelayproject",
-                "credential": "openrelayproject",
-            },
+            {"urls": ["stun:stun.l.google.com:19302"]},
+            {"urls": ["stun:stun1.l.google.com:19302"]},
+            {"urls": ["stun:stun2.l.google.com:19302"]},
+            {"urls": ["stun:global.stun.twilio.com:3478"]},
+            {"urls": ["stun:stun.cloudflare.com:3478"]},
         ]
         if hasattr(st, "secrets") and "webrtc" in st.secrets:
             try:
-                ice_servers.append({
-                    "urls": [st.secrets["webrtc"]["turn_url"]],
-                    "username": st.secrets["webrtc"]["turn_username"],
-                    "credential": st.secrets["webrtc"]["turn_password"],
-                })
+                turn_cfg = st.secrets["webrtc"]
+                if "turn_url" in turn_cfg:
+                    ice_servers.append({
+                        "urls": [turn_cfg["turn_url"]],
+                        "username": turn_cfg.get("turn_username", ""),
+                        "credential": turn_cfg.get("turn_password", ""),
+                    })
             except Exception:
                 pass
 
@@ -282,7 +272,11 @@ def main():
             video_processor_factory=VideoProcessorClass,
             rtc_configuration={"iceServers": ice_servers},
             media_stream_constraints={
-                "video": True,
+                "video": {
+                    "width": {"ideal": 640},
+                    "height": {"ideal": 480},
+                    "frameRate": {"ideal": 30}
+                },
                 "audio": False
             },
             async_processing=True
