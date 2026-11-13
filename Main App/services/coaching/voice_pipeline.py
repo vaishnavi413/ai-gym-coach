@@ -12,6 +12,9 @@ class VoicePipeline:
         if "issue" in metrics:
             return metrics["issue"]
 
+        if metrics.get("form_issue"):
+            return metrics["form_issue"]
+
         if exercise == "Squats":
             depth = metrics.get("depth_status", "")
             back_angle = metrics.get("back_angle", 180)
@@ -60,6 +63,26 @@ class VoicePipeline:
             
             if balance == "OFF BALANCE":
                 return "The user is losing balance during the lunge — feet should be hip-width apart."
+
+        elif exercise == "Neck Rotation":
+            yaw = abs(metrics.get("yaw", 0))
+            if yaw > 40:
+                return "The user is rotating their neck too far — encourage a gentle range of motion."
+
+        elif exercise == "Neck Side Bending":
+            roll = abs(metrics.get("roll", 0))
+            if roll > 30:
+                return "The user is tilting their neck too far — keep shoulders relaxed and down."
+
+        elif exercise == "Neck Flexion":
+            pitch = metrics.get("pitch", 0)
+            if pitch > 30:
+                return "The user is lowering chin too far — keep movement gentle without straining."
+
+        elif exercise == "Neck Extension":
+            pitch = metrics.get("pitch", 0)
+            if pitch < -25:
+                return "The user is tilting head too far backwards — look slightly up without straining."
 
         return None
 

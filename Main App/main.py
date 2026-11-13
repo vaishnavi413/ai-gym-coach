@@ -18,7 +18,12 @@ load_dotenv()
 import pandas as pd
 from services.auth.login_wall import render_login_wall
 from services.state.session_defaults import initial_session_defaults
-from services.config.workout_config import EXERCISE_OPTIONS
+from services.config.workout_config import (
+    EXERCISE_CATEGORIES,
+    EXERCISE_OPTIONS,
+    NECK_EXERCISES,
+    EXERCISE_INSTRUCTIONS,
+)
 from services.ui.style_loader import load_css, inject_local_font, inject_webrtc_styles
 from services.persistence.exercise_repository import init_db
 from streamlit_webrtc import webrtc_streamer, WebRtcMode
@@ -44,11 +49,38 @@ def live_sync_widget(context):
     current_set_reps = st.session_state.get("current_set_reps", 0)
     sets_done = st.session_state.get("sets_completed", 0)
     target_sets = st.session_state.get("target_sets", 3)
+    exercise = st.session_state.get("exercise_type", "")
+    is_neck = exercise in NECK_EXERCISES
 
     col1, col2, col3 = st.columns(3)
     col1.metric("🏋️ Total Reps", f"{total_reps}")
     col2.metric("🎯 Current Set", f"{current_set_reps} / {reps_per_set}")
     col3.metric("🏆 Sets Done", f"{sets_done} / {target_sets}")
+
+    # For neck exercises, show real-time movement state & calibration status
+    if is_neck:
+        c_state, c_angle = st.columns([2, 1])
+        with c_state:
+            status = (
+                st.session_state.get("turn_status")
+                or st.session_state.get("tilt_status")
+                or st.session_state.get("flexion_status")
+                or st.session_state.get("extension_status")
+                or "Center"
+            )
+            st.caption(f"**Movement Stage:** {status}")
+        with c_angle:
+            if exercise == "Neck Rotation":
+                st.caption(f"**Yaw Angle:** {st.session_state.get('yaw', 0)}°")
+            elif exercise == "Neck Side Bending":
+                st.caption(f"**Roll Angle:** {st.session_state.get('roll', 0)}°")
+            else:
+                st.caption(f"**Pitch Angle:** {st.session_state.get('pitch', 0)}°")
+
+    # Quick demo mode completion banner
+    if st.session_state.get("quick_demo_mode", False) and total_reps >= 5:
+        st.balloons()
+        st.success("🎉 **Demo Target Reached!** 5 Repetitions completed successfully. Click **'End & Save Workout'** to record your session.")
 
 
 def main():
@@ -108,14 +140,50 @@ def main():
 
         st.divider()
 
-        st.subheader("Workout Plan")
+        st.subheader("Workout Configuration")
 
         if not workout_started:
-            plan_exercise = st.selectbox("Exercise", options=EXERCISE_OPTIONS, key="plan_exercise")
+            # --- 1. Category Selection ---
+            category_options = list(EXERCISE_CATEGORIES.keys())
+            current_category = st.session_state.get("exercise_category", "Strength Exercises")
+            category_idx = 0 if current_category == "Strength Exercises" else 1
 
-            plan_sets = st.number_input("Sets", min_value=1, max_value=50, value=3, key="plan_sets", step=1)
+            selected_category = st.radio(
+                "Select Category",
+                options=category_options,
+                index=category_idx,
+                key="category_radio_choice"
+            )
+            st.session_state.exercise_category = selected_category
 
-            plan_reps = st.number_input("Reps per Set", min_value=1, max_value=50, value=10, key="plan_reps", step=1)
+            # --- 2. Exercise Selection from chosen category ---
+            available_exercises = EXERCISE_CATEGORIES[selected_category]
+            plan_exercise = st.selectbox(
+                "Exercise",
+                options=available_exercises,
+                key="plan_exercise"
+            )
+
+            # Show short movement instruction
+            instruction_text = EXERCISE_INSTRUCTIONS.get(plan_exercise, "")
+            if instruction_text:
+                st.caption(f"💡 *{instruction_text}*")
+
+            # --- 3. Quick Demo Mode Toggle ---
+            quick_demo = st.toggle(
+                "⚡ Quick Demo Mode (External Exam)",
+                value=st.session_state.get("quick_demo_mode", False),
+                key="quick_demo_toggle_btn"
+            )
+            st.session_state.quick_demo_mode = quick_demo
+
+            if quick_demo:
+                st.info("🎓 **Exam Demo Mode:** Fixed target of **5 Reps** (1 Set) with real-time pose/head tracking.")
+                plan_sets = 1
+                plan_reps = 5
+            else:
+                plan_sets = st.number_input("Sets", min_value=1, max_value=50, value=3, key="plan_sets", step=1)
+                plan_reps = st.number_input("Reps per Set", min_value=1, max_value=50, value=10, key="plan_reps", step=1)
 
             st.markdown("")
 
@@ -152,8 +220,12 @@ def main():
             exercise = st.session_state.get("exercise_type")
             sets = st.session_state.get("target_sets")
             reps = st.session_state.get("reps_per_set")
+            category = st.session_state.get("exercise_category", "")
 
-            st.info(f"**{exercise}** — {sets} Sets / {reps} Reps Target")
+            st.info(f"**{exercise}** ({category})\n\n🎯 Target: {sets} Sets / {reps} Reps")
+
+            if st.session_state.get("quick_demo_mode", False):
+                st.caption("⚡ Quick Demo Mode Active (Target: 5 Reps)")
 
             end_session_button = st.button("💾 End & Save Workout", key="end_session_button", width="stretch")
 
@@ -195,35 +267,61 @@ def main():
             st.divider()
 
             exercise = st.session_state.get("exercise_type")
+            is_neck = exercise in NECK_EXERCISES
+
             st.subheader("Live Exercise Metrics")
 
-            if exercise == "Squats":
-                st.metric("Knee Angle", f"{st.session_state.get('knee_angle', 0)}°")
-                st.metric("Back Angle", f"{st.session_state.get('back_angle', 0)}°")
-                st.metric("Depth Status", st.session_state.get("depth_status", "N/A"))
+            if is_neck:
+                # --- Neck Mobility Metrics Display ---
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Yaw", f"{st.session_state.get('yaw', 0)}°")
+                c2.metric("Pitch", f"{st.session_state.get('pitch', 0)}°")
+                c3.metric("Roll", f"{st.session_state.get('roll', 0)}°")
 
-            elif exercise == "Push-ups":
-                st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
-                st.metric("Body Alignment", st.session_state.get("body_alignment", "N/A"))
-                st.metric("Hip Position", st.session_state.get("hip_status", "N/A"))
+                if exercise == "Neck Rotation":
+                    st.metric("Turn Status", st.session_state.get("turn_status", "Center"))
+                elif exercise == "Neck Side Bending":
+                    st.metric("Tilt Status", st.session_state.get("tilt_status", "Center"))
+                elif exercise == "Neck Flexion":
+                    st.metric("Flexion Status", st.session_state.get("flexion_status", "Neutral"))
+                elif exercise == "Neck Extension":
+                    st.metric("Extension Status", st.session_state.get("extension_status", "Neutral"))
 
-            elif exercise == "Biceps Curls (Dumbbell)":
-                st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
-                st.metric("Shoulder Stability", st.session_state.get("shoulder_status", "N/A"))
-                st.metric("Swing Detection", st.session_state.get("swing_status", "N/A"))
+                is_calibrated = st.session_state.get("is_calibrated", False)
+                if is_calibrated:
+                    st.success("🟢 Neutral Reference Set")
+                else:
+                    st.warning("🟡 Calibrating... Look straight ahead")
 
-            elif exercise == "Shoulder Press":
-                st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
-                st.metric("Arm Extension", st.session_state.get("extension_status", "N/A"))
-                st.metric("Back Arch", st.session_state.get("back_arch_status", "N/A"))
+            else:
+                # --- Strength Metrics Display (Preserved 100%) ---
+                if exercise == "Squats":
+                    st.metric("Knee Angle", f"{st.session_state.get('knee_angle', 0)}°")
+                    st.metric("Back Angle", f"{st.session_state.get('back_angle', 0)}°")
+                    st.metric("Depth Status", st.session_state.get("depth_status", "N/A"))
 
-            elif exercise == "Lunges":
-                st.metric("Front Knee Angle", f"{st.session_state.get('front_knee_angle', 0)}°")
-                st.metric("Torso Angle", f"{st.session_state.get('torso_angle', 0)}°")
-                st.metric("Balance Status", st.session_state.get("balance_status", "N/A"))
+                elif exercise == "Push-ups":
+                    st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
+                    st.metric("Body Alignment", st.session_state.get("body_alignment", "N/A"))
+                    st.metric("Hip Position", st.session_state.get("hip_status", "N/A"))
+
+                elif exercise == "Biceps Curls (Dumbbell)":
+                    st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
+                    st.metric("Shoulder Stability", st.session_state.get("shoulder_status", "N/A"))
+                    st.metric("Swing Detection", st.session_state.get("swing_status", "N/A"))
+
+                elif exercise == "Shoulder Press":
+                    st.metric("Elbow Angle", f"{st.session_state.get('elbow_angle', 0)}°")
+                    st.metric("Arm Extension", st.session_state.get("extension_status", "N/A"))
+                    st.metric("Back Arch", st.session_state.get("back_arch_status", "N/A"))
+
+                elif exercise == "Lunges":
+                    st.metric("Front Knee Angle", f"{st.session_state.get('front_knee_angle', 0)}°")
+                    st.metric("Torso Angle", f"{st.session_state.get('torso_angle', 0)}°")
+                    st.metric("Balance Status", st.session_state.get("balance_status", "N/A"))
 
     st.title("AI Real-time GYM Coach")
-    st.markdown("#### Real-time pose detection with proactive AI voice coaching")
+    st.markdown("#### Real-time pose & neck mobility tracking with proactive AI voice coaching")
  
     if st.session_state.get("audio_to_play"):
         autoplay_audio(st.session_state.audio_to_play)
@@ -245,9 +343,10 @@ def main():
                 margin-bottom: 24px;
                 background-color: rgba(255, 255, 255, 0.02);
             ">
-                <h3 style="color:#eee; margin-bottom:8px;">👈 Set your workout plan in the sidebar</h3>
+                <h3 style="color:#eee; margin-bottom:8px;">👈 Choose your workout in the sidebar</h3>
                 <p style="font-size:1.05rem; color:#888;">
-                    Choose your exercise, sets and reps, then click <strong>Start Workout</strong> to activate your camera and AI trainer.
+                    Select between <strong>Strength Exercises</strong> or <strong>Neck Mobility Exercises</strong>,<br>
+                    then click <strong>Start Workout</strong> to activate your camera and AI trainer.
                 </p>
             </div>
             """,

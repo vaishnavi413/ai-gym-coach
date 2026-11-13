@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-from services.config.workout_config import METRICS_FIELDS
+from services.config.workout_config import METRICS_FIELDS, NECK_EXERCISES
 from services.persistence.exercise_repository import add_exercise
 
 
@@ -98,17 +98,28 @@ def sync_metrics_update(context):
             if result:
                 st.session_state.audio_to_play, st.session_state.coach_feedback = result
                 
-    pose_detected = latest_metrics.get("pose_detected", True)
-    
-    if not pose_detected and st.session_state.get("voice_pipeline"):
-        result = st.session_state.voice_pipeline.process_event(
-            event="no_pose_detected",
-            exercise=exercise,
-            metrics={"issue": "No pose detected! Please step into the camera frame."},
-        )
-    
-        if result:
-            st.session_state.audio_to_play, st.session_state.coach_feedback = result
+    # Check detection status (Face vs Pose)
+    is_neck = exercise in NECK_EXERCISES
+    if is_neck:
+        face_detected = latest_metrics.get("face_detected", True)
+        if not face_detected and st.session_state.get("voice_pipeline"):
+            result = st.session_state.voice_pipeline.process_event(
+                event="no_face_detected",
+                exercise=exercise,
+                metrics={"issue": "Face not detected! Please face the camera directly."},
+            )
+            if result:
+                st.session_state.audio_to_play, st.session_state.coach_feedback = result
+    else:
+        pose_detected = latest_metrics.get("pose_detected", True)
+        if not pose_detected and st.session_state.get("voice_pipeline"):
+            result = st.session_state.voice_pipeline.process_event(
+                event="no_pose_detected",
+                exercise=exercise,
+                metrics={"issue": "No pose detected! Please step into the camera frame."},
+            )
+            if result:
+                st.session_state.audio_to_play, st.session_state.coach_feedback = result
 
     if st.session_state.get("voice_pipeline"):
         result = st.session_state.voice_pipeline.process_event(
